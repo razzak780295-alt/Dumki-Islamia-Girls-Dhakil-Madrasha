@@ -1,0 +1,131 @@
+{
+  "entities": {
+    "student": {
+      "title": "Student",
+      "description": "Madrasha Student record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique student identifier" },
+        "nameBn": { "type": "string", "description": "Student Bangla name" },
+        "nameEn": { "type": "string", "description": "Student English name" },
+        "fatherName": { "type": "string", "description": "Father's name" },
+        "motherName": { "type": "string", "description": "Mother's name" },
+        "className": { "type": "string", "description": "Class name, e.g., Dakhil 10" },
+        "rollNumber": { "type": "integer", "description": "Roll number" },
+        "dob": { "type": "string", "format": "date", "description": "Date of birth" },
+        "address": { "type": "string", "description": "Residential address" },
+        "guardianMobile": { "type": "string", "description": "Guardian phone number" },
+        "admissionDate": { "type": "string", "format": "date", "description": "Date of admission" }
+      },
+      "required": ["id", "nameBn", "className", "rollNumber"]
+    },
+    "attendance": {
+      "title": "Attendance",
+      "description": "Student attendance record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["Present", "Absent", "Late"] }
+      },
+      "required": ["id", "studentId", "date", "status"]
+    },
+    "feePayment": {
+      "title": "Fee Payment",
+      "description": "Student fee payment ledger details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "feeType": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentDate": { "type": "string" },
+        "monthName": { "type": "string" },
+        "status": { "type": "string", "enum": ["Paid", "Due"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "studentId", "feeType", "amount", "monthName", "status"]
+    },
+    "exam": {
+      "title": "Exam",
+      "description": "Academic Exam details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "date": { "type": "string", "format": "date" }
+      },
+      "required": ["id", "name", "date"]
+    },
+    "examMark": {
+      "title": "Exam Mark",
+      "description": "Student exam mark distribution",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "examId": { "type": "string" },
+        "studentId": { "type": "string" }
+      },
+      "required": ["id", "examId", "studentId"]
+    },
+    "teacher": {
+      "title": "Teacher",
+      "description": "Teacher profile registry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "subject": { "type": "string" },
+        "qualification": { "type": "string" },
+        "mobile": { "type": "string" },
+        "joinDate": { "type": "string", "format": "date" },
+        "salary": { "type": "number" }
+      },
+      "required": ["id", "name", "subject", "qualification"]
+    },
+    "notice": {
+      "title": "Notice",
+      "description": "Notice Board announcement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "category": { "type": "string", "enum": ["General", "Exam", "Holiday", "Fee"] }
+      },
+      "required": ["id", "title", "description", "date", "category"]
+    }
+  },
+  "firestore": {
+    "students": {
+      "schema": "student",
+      "description": "List of students"
+    },
+    "attendance": {
+      "schema": "attendance",
+      "description": "Daily student attendances"
+    },
+    "fees": {
+      "schema": "feePayment",
+      "description": "Student financial transactions/dues ledger"
+    },
+    "exams": {
+      "schema": "exam",
+      "description": "Academic exams definition"
+    },
+    "marks": {
+      "schema": "examMark",
+      "description": "Stored exam marksheets"
+    },
+    "teachers": {
+      "schema": "teacher",
+      "description": "List of staff profiles"
+    },
+    "notices": {
+      "schema": "notice",
+      "description": "Public and internal notice board updates"
+    }
+  }
+}

@@ -5,6 +5,8 @@ import {
 import { 
   initialStudents, initialTeachers, initialNotices, initialExams, initialExamMarks, initialAttendance, initialFees 
 } from './sampleData';
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from './firebase';
 
 // Component imports
 import LoginScreen from './components/LoginScreen';
@@ -19,15 +21,58 @@ import BaniTab from './components/BaniTab';
 import GalleryTab from './components/GalleryTab';
 import SourceEditorTab from './components/SourceEditorTab';
 import FieldManagerTab from './components/FieldManagerTab';
+import PasswordChangeTab from './components/PasswordChangeTab';
+import MenuManagerTab, { MenuItem } from './components/MenuManagerTab';
+import * as LucideIcons from 'lucide-react';
 
 // Lucide icon imports
 import { 
   LayoutDashboard, Users, CalendarCheck2, PiggyBank, Award, UserSquare2, Megaphone, 
   LogOut, Star, Download, Upload, CheckCircle, AlertTriangle, Menu, X, Landmark,
-  Quote, Image, Code, Sliders
+  Quote, Image, Code, Sliders, KeyRound, SlidersHorizontal
 } from 'lucide-react';
 
-type TabType = 'Dashboard' | 'Student' | 'Attendance' | 'Fees' | 'Exam' | 'Teacher' | 'Notice' | 'Bani' | 'Gallery' | 'Source' | 'FieldManager';
+const LucideIconMap: Record<string, React.ComponentType<any>> = {
+  LayoutDashboard,
+  Users,
+  CalendarCheck2,
+  PiggyBank,
+  Award,
+  UserSquare2,
+  Megaphone,
+  Quote,
+  Image,
+  Code,
+  Sliders,
+  KeyRound,
+  SlidersHorizontal,
+};
+
+function MenuItemIcon({ iconName, className = "h-4 w-4" }: { iconName: string; className?: string }) {
+  const IconComponent = LucideIconMap[iconName];
+  if (IconComponent) {
+    return <IconComponent className={className} />;
+  }
+  return <span className="text-sm select-none shrink-0">{iconName}</span>;
+}
+
+const DEFAULT_MENU_ITEMS: MenuItem[] = [
+  { id: 'Dashboard', label: 'ড্যাশবোর্ড', labelEn: 'Dashboard', icon: 'LayoutDashboard', isCore: true, active: true },
+  { id: 'Student', label: 'ছাত্রী ব্যবস্থাপনা', labelEn: 'Students', icon: 'Users', isCore: true, active: true },
+  { id: 'Attendance', label: 'হাজিরা মডিউল', labelEn: 'Attendance', icon: 'CalendarCheck2', isCore: true, active: true },
+  { id: 'Fees', label: 'বেতন ও ফিস', labelEn: 'Fees Ledger', icon: 'PiggyBank', isCore: true, active: true },
+  { id: 'Exam', label: 'পরীক্ষা ও ফলাফল', labelEn: 'Exams & Marks', icon: 'Award', isCore: true, active: true },
+  { id: 'Teacher', label: 'শিক্ষক তথ্য', labelEn: 'Teachers profile', icon: 'UserSquare2', isCore: true, active: true },
+  { id: 'Notice', label: 'নোটিশ বোর্ড', labelEn: 'Notice Board', icon: 'Megaphone', isCore: true, active: true },
+  { id: 'Bani', label: 'বাণী ও বার্তা', labelEn: 'Bani Messages', icon: 'Quote', isCore: false, active: true },
+  { id: 'Gallery', label: 'ছবি গ্যালারি', labelEn: 'Photo Gallery', icon: 'Image', isCore: false, active: true },
+  { id: 'Source', label: '⚙️ সোর্স এডিটর', labelEn: 'Source Editor', icon: 'Code', isCore: false, active: true },
+  { id: 'FieldManager', label: '🛠️ ফিল্ড ম্যানেজার', labelEn: 'Field Manager', icon: 'Sliders', isCore: false, active: true },
+  { id: 'PasswordChange', label: '🔐 পাসওয়ার্ড পরিবর্তন', labelEn: 'Change Password', icon: 'KeyRound', isCore: false, active: true },
+  { id: 'MenuManager', label: '🗂️ মেনু ম্যানেজার', labelEn: 'Menu Manager', icon: 'SlidersHorizontal', isCore: false, active: true }
+];
+
+type TabType = string;
 
 interface Toast {
   id: string;
@@ -54,10 +99,13 @@ export default function App() {
   // Toast State
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  // Menu items config state
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+
   // Mobile menu control toggles
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // 1. Initial State Hydration and LocalStorage Loading
+  // 1. Initial State Hydration and Real-Time Firestore Synchronization
   useEffect(() => {
     // Check login state
     const authStatus = localStorage.getItem('dumki_auth');
@@ -65,56 +113,177 @@ export default function App() {
       setIsLoggedIn(true);
     }
 
-    // Hydrate tables
-    const storedStudents = localStorage.getItem('dumki_students');
-    const storedTeachers = localStorage.getItem('dumki_teachers');
-    const storedNotices = localStorage.getItem('dumki_notices');
-    const storedAttendance = localStorage.getItem('dumki_attendance');
-    const storedFees = localStorage.getItem('dumki_fees');
-    const storedExams = localStorage.getItem('dumki_exams');
-    const storedMarks = localStorage.getItem('dumki_marks');
-
-    if (storedStudents) setStudents(JSON.parse(storedStudents));
-    else {
-      setStudents(initialStudents);
-      localStorage.setItem('dumki_students', JSON.stringify(initialStudents));
+    // Load menu config
+    const storedMenu = localStorage.getItem('madrasha_menu_config');
+    if (storedMenu) {
+      try {
+        setMenuItems(JSON.parse(storedMenu));
+      } catch (e) {
+        setMenuItems([...DEFAULT_MENU_ITEMS]);
+      }
+    } else {
+      setMenuItems([...DEFAULT_MENU_ITEMS]);
     }
 
-    if (storedTeachers) setTeachers(JSON.parse(storedTeachers));
-    else {
-      setTeachers(initialTeachers);
-      localStorage.setItem('dumki_teachers', JSON.stringify(initialTeachers));
-    }
+    // Setting up Firebase Real-Time Listeners with automated migrations/seed fallbacks
+    
+    // Students
+    const unsubscribeStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
+      const list: Student[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as Student);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_students');
+        const sourceData: Student[] = stored ? JSON.parse(stored) : initialStudents;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'students', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `students/${item.id}`));
+        });
+      } else {
+        setStudents(list);
+        localStorage.setItem('dumki_students', JSON.stringify(list));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'students');
+    });
 
-    if (storedNotices) setNotices(JSON.parse(storedNotices));
-    else {
-      setNotices(initialNotices);
-      localStorage.setItem('dumki_notices', JSON.stringify(initialNotices));
-    }
+    // Teachers
+    const unsubscribeTeachers = onSnapshot(collection(db, 'teachers'), (snapshot) => {
+      const list: Teacher[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as Teacher);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_teachers');
+        const sourceData: Teacher[] = stored ? JSON.parse(stored) : initialTeachers;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'teachers', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `teachers/${item.id}`));
+        });
+      } else {
+        setTeachers(list);
+        localStorage.setItem('dumki_teachers', JSON.stringify(list));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'teachers');
+    });
 
-    if (storedAttendance) setAttendance(JSON.parse(storedAttendance));
-    else {
-      setAttendance(initialAttendance);
-      localStorage.setItem('dumki_attendance', JSON.stringify(initialAttendance));
-    }
+    // Notices
+    const unsubscribeNotices = onSnapshot(collection(db, 'notices'), (snapshot) => {
+      const list: Notice[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as Notice);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_notices');
+        const sourceData: Notice[] = stored ? JSON.parse(stored) : initialNotices;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'notices', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `notices/${item.id}`));
+        });
+      } else {
+        const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date));
+        setNotices(sorted);
+        localStorage.setItem('dumki_notices', JSON.stringify(sorted));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'notices');
+    });
 
-    if (storedFees) setFees(JSON.parse(storedFees));
-    else {
-      setFees(initialFees);
-      localStorage.setItem('dumki_fees', JSON.stringify(initialFees));
-    }
+    // Attendance
+    const unsubscribeAttendance = onSnapshot(collection(db, 'attendance'), (snapshot) => {
+      const list: AttendanceRecord[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as AttendanceRecord);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_attendance');
+        const sourceData: AttendanceRecord[] = stored ? JSON.parse(stored) : initialAttendance;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'attendance', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `attendance/${item.id}`));
+        });
+      } else {
+        setAttendance(list);
+        localStorage.setItem('dumki_attendance', JSON.stringify(list));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'attendance');
+    });
 
-    if (storedExams) setExams(JSON.parse(storedExams));
-    else {
-      setExams(initialExams);
-      localStorage.setItem('dumki_exams', JSON.stringify(initialExams));
-    }
+    // Fees
+    const unsubscribeFees = onSnapshot(collection(db, 'fees'), (snapshot) => {
+      const list: FeePayment[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as FeePayment);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_fees');
+        const sourceData: FeePayment[] = stored ? JSON.parse(stored) : initialFees;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'fees', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `fees/${item.id}`));
+        });
+      } else {
+        setFees(list);
+        localStorage.setItem('dumki_fees', JSON.stringify(list));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'fees');
+    });
 
-    if (storedMarks) setExamMarks(JSON.parse(storedMarks));
-    else {
-      setExamMarks(initialExamMarks);
-      localStorage.setItem('dumki_marks', JSON.stringify(initialExamMarks));
-    }
+    // Exams
+    const unsubscribeExams = onSnapshot(collection(db, 'exams'), (snapshot) => {
+      const list: Exam[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as Exam);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_exams');
+        const sourceData: Exam[] = stored ? JSON.parse(stored) : initialExams;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'exams', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `exams/${item.id}`));
+        });
+      } else {
+        setExams(list);
+        localStorage.setItem('dumki_exams', JSON.stringify(list));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'exams');
+    });
+
+    // Marks
+    const unsubscribeMarks = onSnapshot(collection(db, 'marks'), (snapshot) => {
+      const list: ExamMark[] = [];
+      snapshot.forEach((doc) => {
+        list.push(doc.data() as ExamMark);
+      });
+      if (list.length === 0) {
+        const stored = localStorage.getItem('dumki_marks');
+        const sourceData: ExamMark[] = stored ? JSON.parse(stored) : initialExamMarks;
+        sourceData.forEach(item => {
+          setDoc(doc(db, 'marks', item.id), item)
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `marks/${item.id}`));
+        });
+      } else {
+        setExamMarks(list);
+        localStorage.setItem('dumki_marks', JSON.stringify(list));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'marks');
+    });
+
+    return () => {
+      unsubscribeStudents();
+      unsubscribeTeachers();
+      unsubscribeNotices();
+      unsubscribeAttendance();
+      unsubscribeFees();
+      unsubscribeExams();
+      unsubscribeMarks();
+    };
   }, []);
 
   // Helper Toast trigger
@@ -135,176 +304,204 @@ export default function App() {
 
   // 2. Data modification handlers
   // --- Students ---
-  const handleAddStudent = (newS: Omit<Student, 'id'>) => {
-    const stud: Student = {
-      id: `stud_${Date.now()}`,
-      ...newS
-    };
-    const updated = [...students, stud];
-    setStudents(updated);
-    persist('dumki_students', updated);
-    showToast('ছাত্রী সফলভাবে ভর্তি করা হয়েছে! (Student successfully enrolled!)', 'success');
+  const handleAddStudent = async (newS: Omit<Student, 'id'>) => {
+    const id = `stud_${Date.now()}`;
+    const studentObj: Student = { id, ...newS };
+    try {
+      await setDoc(doc(db, 'students', id), studentObj);
+      showToast('ছাত্রী সফলভাবে ভর্তি করা হয়েছে! (Student successfully enrolled!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `students/${id}`);
+      showToast('ভুল হয়েছে! ডাটাবেজে সংরক্ষণ করা যায়নি।', 'error');
+    }
   };
 
-  const handleEditStudent = (updatedS: Student) => {
-    const updated = students.map(s => s.id === updatedS.id ? updatedS : s);
-    setStudents(updated);
-    persist('dumki_students', updated);
-    showToast('ছাত্রীর প্রোফাইল সফলভাবে আপডেট করা হয়েছে! (Student details updated!)', 'success');
+  const handleEditStudent = async (updatedS: Student) => {
+    try {
+      await setDoc(doc(db, 'students', updatedS.id), updatedS);
+      showToast('ছাত্রীর প্রোফাইল সফলভাবে আপডেট করা হয়েছে! (Student details updated!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `students/${updatedS.id}`);
+      showToast('ভুল হয়েছে! ডাটাবেজে আপডেট করা যায়নি।', 'error');
+    }
   };
 
-  const handleDeleteStudent = (id: string) => {
-    const updated = students.filter(s => s.id !== id);
-    setStudents(updated);
-    persist('dumki_students', updated);
+  const handleDeleteStudent = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'students', id));
+      
+      // Cascade delete any corresponding fees, marks, attendance record
+      const feesToDelete = fees.filter(f => f.studentId === id);
+      for (const fee of feesToDelete) {
+        await deleteDoc(doc(db, 'fees', fee.id));
+      }
 
-    // Cascade delete any corresponding fees, marks, attendance record
-    const updatedFees = fees.filter(f => f.studentId !== id);
-    setFees(updatedFees);
-    persist('dumki_fees', updatedFees);
+      const marksToDelete = examMarks.filter(em => em.studentId === id);
+      for (const mark of marksToDelete) {
+        await deleteDoc(doc(db, 'marks', mark.id));
+      }
 
-    const updatedMarks = examMarks.filter(em => em.studentId !== id);
-    setExamMarks(updatedMarks);
-    persist('dumki_marks', updatedMarks);
+      const attToDelete = attendance.filter(a => a.studentId === id);
+      for (const att of attToDelete) {
+        await deleteDoc(doc(db, 'attendance', att.id));
+      }
 
-    const updatedAtt = attendance.filter(a => a.studentId !== id);
-    setAttendance(updatedAtt);
-    persist('dumki_attendance', updatedAtt);
-
-    showToast('ছাত্রীর সমস্ত রেকর্ড নিখুঁতভাবে মুছে ফেলা হয়েছে! (Student and linked files purged!)', 'success');
+      showToast('ছাত্রীর সমস্ত রেকর্ড নিখুঁতভাবে মুছে ফেলা হয়েছে! (Student and linked files purged!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `students/${id}`);
+      showToast('মুছে ফেলার সময় ভুল হয়েছে।', 'error');
+    }
   };
 
   // --- Attendance ---
-  const handleSaveAttendance = (records: Omit<AttendanceRecord, 'id'>[]) => {
-    // Merge or replace existing records on the same date for the target students
+  const handleSaveAttendance = async (records: Omit<AttendanceRecord, 'id'>[]) => {
     if (records.length === 0) return;
     const dateToCheck = records[0].date;
     const studentIds = records.map(r => r.studentId);
 
-    // Filter out existing records corresponding to these students on this date
-    const remaining = attendance.filter(a => !(a.date === dateToCheck && studentIds.includes(a.studentId)));
-    
-    const newRecords: AttendanceRecord[] = records.map((r, i) => ({
-      id: `att_${Date.now()}_${i}`,
-      ...r
-    }));
+    try {
+      // Find and delete existing records for these students on this specific date
+      const existingToDelete = attendance.filter(a => a.date === dateToCheck && studentIds.includes(a.studentId));
+      for (const att of existingToDelete) {
+        await deleteDoc(doc(db, 'attendance', att.id));
+      }
 
-    const updated = [...remaining, ...newRecords];
-    setAttendance(updated);
-    persist('dumki_attendance', updated);
-    showToast('আজকের হাজিরা সফলভাবে সংরক্ষণ করা হয়েছে! (Attendance records saved!)', 'success');
+      // Add new records
+      for (let i = 0; i < records.length; i++) {
+        const r = records[i];
+        const id = `att_${Date.now()}_${i}`;
+        const attObj: AttendanceRecord = { id, ...r };
+        await setDoc(doc(db, 'attendance', id), attObj);
+      }
+      showToast('আজকের হাজিরা সফলভাবে সংরক্ষণ করা হয়েছে! (Attendance records saved!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'attendance');
+      showToast('হাজিরা সংরক্ষণে ভুল হয়েছে।', 'error');
+    }
   };
 
   // --- Fees ---
-  const handleAddFeePayment = (newP: Omit<FeePayment, 'id'>) => {
-    const pay: FeePayment = {
-      id: `fee_${Date.now()}`,
-      ...newP
+  const handleAddFeePayment = async (newP: Omit<FeePayment, 'id'>) => {
+    const id = `fee_${Date.now()}`;
+    const pay: FeePayment = { id, ...newP };
+    try {
+      await setDoc(doc(db, 'fees', id), pay);
+      showToast('ফি রেকর্ড সফলভাবে যুক্ত করা হয়েছে! (Payment recorded successfully!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `fees/${id}`);
+      showToast('ফি সংরক্ষণে ভুল হয়েছে।', 'error');
+    }
+  };
+
+  const handleUpdateFeeStatus = async (id: string, newStatus: 'Paid' | 'Due') => {
+    const originalFee = fees.find(f => f.id === id);
+    if (!originalFee) return;
+
+    const updatedFee: FeePayment = {
+      ...originalFee,
+      status: newStatus,
+      paymentDate: newStatus === 'Paid' ? new Date().toISOString().split('T')[0] : ''
     };
-    const updated = [...fees, pay];
-    setFees(updated);
-    persist('dumki_fees', updated);
-    showToast('ফি রেকর্ড সফলভাবে যুক্ত করা হয়েছে! (Payment recorded successfully!)', 'success');
+
+    try {
+      await setDoc(doc(db, 'fees', id), updatedFee);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `fees/${id}`);
+    }
   };
 
-  const handleUpdateFeeStatus = (id: string, newStatus: 'Paid' | 'Due') => {
-    const updated = fees.map(f => {
-      if (f.id === id) {
-        return {
-          ...f,
-          status: newStatus,
-          paymentDate: newStatus === 'Paid' ? new Date().toISOString().split('T')[0] : ''
-        };
-      }
-      return f;
-    });
-    setFees(updated);
-    persist('dumki_fees', updated);
-  };
-
-  const handleDeleteFeePayment = (id: string) => {
-    const updated = fees.filter(f => f.id !== id);
-    setFees(updated);
-    persist('dumki_fees', updated);
-    showToast('ফি রসিদ সফলভাবে বাতিল করা হয়েছে।', 'success');
+  const handleDeleteFeePayment = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'fees', id));
+      showToast('ফি রসিদ সফলভাবে বাতিল করা হয়েছে।', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `fees/${id}`);
+      showToast('বাতিল করার সময় ভুল হয়েছে।', 'error');
+    }
   };
 
   // --- Exams & Results ---
-  const handleAddExam = (newE: Omit<Exam, 'id'>) => {
-    const examObj: Exam = {
-      id: `exam_${Date.now()}`,
-      ...newE
-    };
-    const updated = [...exams, examObj];
-    setExams(updated);
-    persist('dumki_exams', updated);
+  const handleAddExam = async (newE: Omit<Exam, 'id'>) => {
+    const id = `exam_${Date.now()}`;
+    const examObj: Exam = { id, ...newE };
+    try {
+      await setDoc(doc(db, 'exams', id), examObj);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `exams/${id}`);
+    }
   };
 
-  const handleSaveMarks = (newMark: Omit<ExamMark, 'id'>) => {
-    // Check if entry already exists (same student same exam)
-    const existingIndex = examMarks.findIndex(
+  const handleSaveMarks = async (newMark: Omit<ExamMark, 'id'>) => {
+    const existing = examMarks.find(
       m => m.studentId === newMark.studentId && m.examId === newMark.examId
     );
 
-    let updated: ExamMark[];
-    if (existingIndex > -1) {
-      updated = examMarks.map((m, i) => i === existingIndex ? { ...m, ...newMark } : m);
-    } else {
-      const entry: ExamMark = {
-        id: `mark_${Date.now()}`,
-        ...newMark
-      };
-      updated = [...examMarks, entry];
-    }
+    const id = existing ? existing.id : `mark_${Date.now()}`;
+    const examMarkObj: ExamMark = { id, ...newMark };
 
-    setExamMarks(updated);
-    persist('dumki_marks', updated);
-    showToast('পরীক্ষার ফলাফল ও মেরিট রেকর্ড সফলভাবে সংরক্ষিত হয়েছে! (Marksheet synced!)', 'success');
+    try {
+      await setDoc(doc(db, 'marks', id), examMarkObj);
+      showToast('পরীক্ষার ফলাফল ও মেরিট রেকর্ড সফলভাবে সংরক্ষিত হয়েছে! (Marksheet synced!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `marks/${id}`);
+      showToast('ফলাফল সংরক্ষণে ভুল হয়েছে।', 'error');
+    }
   };
 
   // --- Teachers ---
-  const handleAddTeacher = (newT: Omit<Teacher, 'id'>) => {
-    const teachObj: Teacher = {
-      id: `teach_${Date.now()}`,
-      ...newT
-    };
-    const updated = [...teachers, teachObj];
-    setTeachers(updated);
-    persist('dumki_teachers', updated);
-    showToast('সম্মানিত শিক্ষক সফলভাবে নিবন্ধিত হয়েছেন! (Teacher added!)', 'success');
+  const handleAddTeacher = async (newT: Omit<Teacher, 'id'>) => {
+    const id = `teach_${Date.now()}`;
+    const teachObj: Teacher = { id, ...newT };
+    try {
+      await setDoc(doc(db, 'teachers', id), teachObj);
+      showToast('সম্মানিত শিক্ষক সফলভাবে নিবন্ধিত হয়েছেন! (Teacher added!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `teachers/${id}`);
+      showToast('শিক্ষক নিবন্ধনে ভুল হয়েছে।', 'error');
+    }
   };
 
-  const handleEditTeacher = (updatedT: Teacher) => {
-    const updated = teachers.map(t => t.id === updatedT.id ? updatedT : t);
-    setTeachers(updated);
-    persist('dumki_teachers', updated);
-    showToast('শিক্ষকের তথ্য বিবরণী সফলভাবে পরিবর্তিত হয়েছে! (Teacher profile modified!)', 'success');
+  const handleEditTeacher = async (updatedT: Teacher) => {
+    try {
+      await setDoc(doc(db, 'teachers', updatedT.id), updatedT);
+      showToast('শিক্ষকের তথ্য বিবরণী সফলভাবে পরিবর্তিত হয়েছে! (Teacher profile modified!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `teachers/${updatedT.id}`);
+      showToast('পরিবর্তনে ভুল হয়েছে।', 'error');
+    }
   };
 
-  const handleDeleteTeacher = (id: string) => {
-    const updated = teachers.filter(t => t.id !== id);
-    setTeachers(updated);
-    persist('dumki_teachers', updated);
-    showToast('শিক্ষকের সমস্ত তথ্য রেকর্ড মুছে ফেলা হয়েছে! (Teacher record removed!)', 'success');
+  const handleDeleteTeacher = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'teachers', id));
+      showToast('শিক্ষকের সমস্ত তথ্য রেকর্ড মুছে ফেলা হয়েছে! (Teacher record removed!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `teachers/${id}`);
+      showToast('মুছে ফেলার সময় ভুল হয়েছে।', 'error');
+    }
   };
 
   // --- Notices ---
-  const handleAddNotice = (newN: Omit<Notice, 'id'>) => {
-    const noticeObj: Notice = {
-      id: `not_${Date.now()}`,
-      ...newN
-    };
-    const updated = [noticeObj, ...notices]; // Prepends for showing newest first
-    setNotices(updated);
-    persist('dumki_notices', updated);
-    showToast('নতুন নোটিশ সফলভাবে বোর্ডে টানানো হয়েছে! (Announcement published!)', 'success');
+  const handleAddNotice = async (newN: Omit<Notice, 'id'>) => {
+    const id = `not_${Date.now()}`;
+    const noticeObj: Notice = { id, ...newN };
+    try {
+      await setDoc(doc(db, 'notices', id), noticeObj);
+      showToast('নতুন নোটিশ সফলভাবে বোর্ডে টানানো হয়েছে! (Announcement published!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `notices/${id}`);
+      showToast('নোটিশ প্রকাশে ভুল হয়েছে।', 'error');
+    }
   };
 
-  const handleDeleteNotice = (id: string) => {
-    const updated = notices.filter(n => n.id !== id);
-    setNotices(updated);
-    persist('dumki_notices', updated);
-    showToast('নোটিশ বোর্ড থেকে মুছে ফেলা হয়েছে! (Notice removed!)', 'success');
+  const handleDeleteNotice = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'notices', id));
+      showToast('নোটিশ বোর্ড থেকে মুছে ফেলা হয়েছে! (Notice removed!)', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `notices/${id}`);
+      showToast('মুছে ফেলার সময় ভুল হয়েছে।', 'error');
+    }
   };
 
   // Backup handlers
@@ -520,21 +717,8 @@ export default function App() {
               <p className="text-[9px] text-emerald-300 font-sans tracking-wider uppercase opacity-80 select-all">Dumki, Patuakhali</p>
             </div>
 
-            <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)]">
-              {[
-                { id: 'Dashboard', label: 'ড্যাশবোর্ড', labelEn: 'Dashboard', icon: LayoutDashboard },
-                { id: 'Student', label: 'ছাত্রী ব্যবস্থাপনা', labelEn: 'Students', icon: Users },
-                { id: 'Attendance', label: 'হাজিরা মডিউল', labelEn: 'Attendance', icon: CalendarCheck2 },
-                { id: 'Fees', label: 'বেতন ও ফিস', labelEn: 'Fees Ledger', icon: PiggyBank },
-                { id: 'Exam', label: 'পরীক্ষা ও ফলাফল', labelEn: 'Exams & Marks', icon: Award },
-                { id: 'Teacher', label: 'শিক্ষক তথ্য', labelEn: 'Teachers profile', icon: UserSquare2 },
-                { id: 'Notice', label: 'নোটিশ বোর্ড', labelEn: 'Notice Board', icon: Megaphone },
-                { id: 'Bani', label: 'বাণী ও বার্তা', labelEn: 'Bani Messages', icon: Quote },
-                { id: 'Gallery', label: 'ছবি গ্যালারি', labelEn: 'Photo Gallery', icon: Image },
-                { id: 'Source', label: '⚙️ সোর্স এডিটর', labelEn: 'Source Editor', icon: Code },
-                { id: 'FieldManager', label: '🛠️ ফিল্ড ম্যানেজার', labelEn: 'Field Manager', icon: Sliders },
-              ].map(tab => {
-                const Icon = tab.icon;
+            <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] font-sans">
+              {menuItems.filter(m => m.active).map(tab => {
                 const isActive = activeTab === tab.id;
                 return (
                   <button
@@ -546,7 +730,9 @@ export default function App() {
                         : 'bg-transparent border-transparent text-emerald-100 hover:bg-madrasha-green-600/50 hover:text-white'
                     }`}
                   >
-                    <Icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? 'text-madrasha-gold-500' : 'text-emerald-200'}`} />
+                    <div className={`${isActive ? 'text-madrasha-gold-500' : 'text-emerald-200'}`}>
+                      <MenuItemIcon iconName={tab.icon} className="h-4.5 w-4.5 shrink-0" />
+                    </div>
                     <div>
                       <h4 className="leading-tight">{tab.label}</h4>
                       <p className="text-[9px] font-sans opacity-70 mt-0.5">({tab.labelEn})</p>
@@ -592,20 +778,7 @@ export default function App() {
 
               {/* Drawer Links */}
               <nav className="space-y-1.5 flex-1 overflow-y-auto">
-                {[
-                  { id: 'Dashboard', label: 'ড্যাশবোর্ড', labelEn: 'Dashboard', icon: LayoutDashboard },
-                  { id: 'Student', label: 'ছাত্রী ব্যবস্থাপনা', labelEn: 'Students', icon: Users },
-                  { id: 'Attendance', label: 'হাজিরা মডিউল', labelEn: 'Attendance', icon: CalendarCheck2 },
-                  { id: 'Fees', label: 'বেতন ও ফিস', labelEn: 'Fees Ledger', icon: PiggyBank },
-                  { id: 'Exam', label: 'পরীক্ষা ও ফলাফল', labelEn: 'Exams & Marks', icon: Award },
-                  { id: 'Teacher', label: 'শিক্ষক তথ্য', labelEn: 'Teachers profile', icon: UserSquare2 },
-                  { id: 'Notice', label: 'নোটিশ বোর্ড', labelEn: 'Notice Board', icon: Megaphone },
-                  { id: 'Bani', label: 'বাণী ও বার্তা', labelEn: 'Bani Messages', icon: Quote },
-                  { id: 'Gallery', label: 'ছবি গ্যালারি', labelEn: 'Photo Gallery', icon: Image },
-                  { id: 'Source', label: '⚙️ সোর্স এডিটর', labelEn: 'Source Editor', icon: Code },
-                  { id: 'FieldManager', label: '🛠️ ফিল্ড ম্যানেজার', labelEn: 'Field Manager', icon: Sliders },
-                ].map(tab => {
-                  const Icon = tab.icon;
+                {menuItems.filter(m => m.active).map(tab => {
                   const isActive = activeTab === tab.id;
                   return (
                     <button
@@ -617,7 +790,9 @@ export default function App() {
                           : 'hover:bg-zinc-50 text-zinc-650'
                       }`}
                     >
-                      <Icon className={`h-4.5 w-4.5 ${isActive ? 'text-madrasha-green-600' : 'text-zinc-400'}`} />
+                      <div className={`${isActive ? 'text-madrasha-green-600' : 'text-zinc-400'}`}>
+                        <MenuItemIcon iconName={tab.icon} className="h-4.5 w-4.5 select-none shrink-0 text-center" />
+                      </div>
                       <div>
                         <h4 className="leading-tight">{tab.label}</h4>
                         <p className="text-[9px] font-sans text-zinc-400 mt-0.5">({tab.labelEn})</p>
@@ -736,6 +911,47 @@ export default function App() {
                   showToast={showToast}
                 />
               )}
+
+              {activeTab === 'PasswordChange' && (
+                <PasswordChangeTab 
+                  showToast={showToast}
+                  onForceLogout={() => {
+                    localStorage.removeItem('dumki_auth');
+                    setIsLoggedIn(false);
+                  }}
+                />
+              )}
+
+              {activeTab === 'MenuManager' && (
+                <MenuManagerTab 
+                  showToast={showToast}
+                  onMenuConfigChange={(newConfig) => setMenuItems(newConfig)}
+                  defaultMenuItems={DEFAULT_MENU_ITEMS}
+                />
+              )}
+
+              {/* Dynamic fallback for any custom pages added by user */}
+              {!['Dashboard', 'Student', 'Attendance', 'Fees', 'Exam', 'Teacher', 'Notice', 'Bani', 'Gallery', 'Source', 'FieldManager', 'PasswordChange', 'MenuManager'].includes(activeTab) && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-8 space-y-4 shadow-sm select-text text-center font-sans">
+                  <div className="w-16 h-16 bg-madrasha-green-50 border border-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+                    {menuItems.find(m => m.id === activeTab)?.icon && !LucideIconMap[menuItems.find(m => m.id === activeTab)!.icon] ? (
+                      menuItems.find(m => m.id === activeTab)!.icon
+                    ) : (
+                      '🕌'
+                    )}
+                  </div>
+                  <h2 className="text-xl font-bold text-madrasha-green-700">
+                    {menuItems.find(m => m.id === activeTab)?.label || 'কাস্টম পেজ'} ({menuItems.find(m => m.id === activeTab)?.labelEn || 'Custom Page'})
+                  </h2>
+                  <p className="text-xs text-zinc-500 font-semibold uppercase font-sans tracking-wide">
+                    Page ID: {activeTab}
+                  </p>
+                  <div className="h-[2px] w-12 bg-madrasha-gold-500 mx-auto my-3"></div>
+                  <p className="text-sm text-zinc-650 max-w-md mx-auto leading-relaxed">
+                    এই পেজের কন্টেন্ট সোর্স এডিটর থেকে যোগ করুন।
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </main>
@@ -743,26 +959,17 @@ export default function App() {
 
       {/* MOBILE STICKY BOTTOM MENU PANEL (No Print) */}
       <footer className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 py-1 px-1 flex justify-around items-center no-print z-40 shadow-lg overflow-x-auto">
-        {[
-          { id: 'Dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard },
-          { id: 'Student', label: 'ছাত্রী', icon: Users },
-          { id: 'Attendance', label: 'হাজিরা', icon: CalendarCheck2 },
-          { id: 'Fees', label: 'ফি', icon: PiggyBank },
-          { id: 'Exam', label: 'পরীক্ষা', icon: Award },
-          { id: 'Source', label: 'সোর্স', icon: Code },
-          { id: 'FieldManager', label: 'ফিল্ড', icon: Sliders },
-        ].map(tab => {
-          const Icon = tab.icon;
+        {menuItems.filter(m => m.active).slice(0, 7).map(tab => {
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => navigateToTab(tab.id as TabType)}
+              onClick={() => navigateToTab(tab.id)}
               className={`flex flex-col items-center p-1.5 rounded-lg transition shrink-0 ${
                 isActive ? 'text-madrasha-green-700 scale-105' : 'text-zinc-400'
               }`}
             >
-              <Icon className="h-4.5 w-4.5 shrink-0" />
+              <MenuItemIcon iconName={tab.icon} className="h-4.5 w-4.5 shrink-0" />
               <span className="text-[10px] font-bold mt-0.5 tracking-tight">{tab.label}</span>
             </button>
           );

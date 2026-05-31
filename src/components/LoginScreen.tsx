@@ -14,7 +14,24 @@ export default function LoginScreen({ onLoginSuccess, showToast }: LoginScreenPr
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (username.trim() === 'admin' && password === 'dumki2024') {
+    
+    let activeUsername = 'admin';
+    let activePassword = 'dumki2024';
+    
+    const stored = localStorage.getItem('madrasha_credentials');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed.username && parsed.password) {
+          activeUsername = parsed.username.trim();
+          activePassword = parsed.password;
+        }
+      } catch (err) {
+        console.error('Error parsing credentials:', err);
+      }
+    }
+
+    if (username.trim() === activeUsername && password === activePassword) {
       setError('');
       showToast('লগইন সফল হয়েছে! স্বাগত জানাচ্ছি। (Login successful! Welcome.)', 'success');
       onLoginSuccess();
@@ -23,6 +40,21 @@ export default function LoginScreen({ onLoginSuccess, showToast }: LoginScreenPr
       showToast('লগইন ব্যর্থ হয়েছে! সঠিক তথ্য দিন। (Login failed! Provide correct credentials.)', 'error');
     }
   };
+
+  const getActiveCredsForUI = () => {
+    const stored = localStorage.getItem('madrasha_credentials');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed.username && parsed.password) {
+          return { u: parsed.username, p: parsed.password, changed: true };
+        }
+      } catch (err) {}
+    }
+    return { u: 'admin', p: 'dumki2024', changed: false };
+  };
+
+  const activeCreds = getActiveCredsForUI();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 font-sans select-none relative overflow-hidden border-t-4 border-madrasha-green-700">
@@ -117,10 +149,12 @@ export default function LoginScreen({ onLoginSuccess, showToast }: LoginScreenPr
 
         {/* Footer Credentials */}
         <div className="mt-5 text-center bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-          <p className="text-[10px] text-zinc-405 font-semibold">পরীক্ষার জন্য ব্যবহার করুন (Use for testing):</p>
+          <p className="text-[10px] text-zinc-405 font-semibold">
+            {activeCreds.changed ? 'পরিবর্তিত লগইন তথ্য (Active Settings Login):' : 'পরীক্ষার জন্য ব্যবহার করুন (Use for testing):'}
+          </p>
           <div className="flex justify-center space-x-3 text-[10px] font-mono text-zinc-750 mt-1 select-all">
-            <span>Name: <strong>admin</strong></span>
-            <span>Pass: <strong>dumki2024</strong></span>
+            <span>Name: <strong>{activeCreds.u}</strong></span>
+            <span>Pass: <strong>{activeCreds.p}</strong></span>
           </div>
         </div>
       </div>

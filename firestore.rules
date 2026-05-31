@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    // Validate Student
+    function isValidStudent(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.nameBn is string && data.nameBn.size() <= 150
+        && data.className is string && data.className.size() <= 50
+        && (data.rollNumber is int || data.rollNumber is float);
+    }
+
+    // Validate Teacher
+    function isValidTeacher(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 150
+        && data.subject is string && data.subject.size() <= 150;
+    }
+
+    // Validate Attendance
+    function isValidAttendance(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.studentId is string && data.studentId.size() <= 128
+        && data.status in ['Present', 'Absent', 'Late'];
+    }
+
+    // Validate Fee
+    function isValidFee(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.studentId is string && data.studentId.size() <= 128
+        && data.status in ['Paid', 'Due']
+        && (data.amount is int || data.amount is float);
+    }
+
+    // Validate Exam
+    function isValidExam(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200;
+    }
+
+    // Validate ExamMark
+    function isValidMark(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.examId is string && data.examId.size() <= 128
+        && data.studentId is string && data.studentId.size() <= 128;
+    }
+
+    // Validate Notice
+    function isValidNotice(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 1000
+        && data.category in ['General', 'Exam', 'Holiday', 'Fee'];
+    }
+
+    match /students/{studentId} {
+      allow read: if true;
+      allow write: if isValidId(studentId) && isValidStudent(incoming());
+    }
+
+    match /teachers/{teacherId} {
+      allow read: if true;
+      allow write: if isValidId(teacherId) && isValidTeacher(incoming());
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if true;
+      allow write: if isValidId(attendanceId) && isValidAttendance(incoming());
+    }
+
+    match /fees/{feeId} {
+      allow read: if true;
+      allow write: if isValidId(feeId) && isValidFee(incoming());
+    }
+
+    match /exams/{examId} {
+      allow read: if true;
+      allow write: if isValidId(examId) && isValidExam(incoming());
+    }
+
+    match /marks/{markId} {
+      allow read: if true;
+      allow write: if isValidId(markId) && isValidMark(incoming());
+    }
+
+    match /notices/{noticeId} {
+      allow read: if true;
+      allow write: if isValidId(noticeId) && isValidNotice(incoming());
+    }
+  }
+}
