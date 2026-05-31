@@ -1,0 +1,6 @@
+{
+  "name": "Dumki Islamia Girls Dakhil Madrasha",
+  "description": "School Management System for Dumki Islamia Girls Dakhil Madrasha, Dumki, Patuakhali, Bangladesh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
